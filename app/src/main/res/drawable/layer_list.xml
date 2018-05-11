@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    >
+    <item>
+        <shape
+            xmlns:android="http://schemas.android.com/apk/res/android"
+            android:shape="rectangle"
+            >
+            <gradient
+                android:angle="180"
+                android:startColor="#151515"
+                android:centerColor="#343030"
+                android:endColor="#151515"
+                android:centerY="0.5"
+                android:centerX="0.5"
+                android:type="linear"
+                />
+        </shape>
+    </item>
+    <item>
+        <shape
+            xmlns:android="http://schemas.android.com/apk/res/android"
+            android:shape="rectangle"
+            >
+            <gradient
+                android:angle="270"
+                android:startColor="#343030"
+                android:centerColor="#00343030"
+                android:endColor="#00151515"
+                android:centerY="0.2"
+                android:centerX="0.35"
+                android:type="linear"
+                />
+        </shape>
+    </item>
+    <!--<item>-->
+        <!--<shape xmlns:android="http://schemas.android.com/apk/res/android">-->
+            <!--<gradient-->
+                <!--android:type="radial"-->
+                <!--android:startColor="#343030"-->
+                <!--android:endColor="#00151515"-->
+                <!--android:gradientRadius="400"-->
+                <!--android:angle="270"-->
+                <!--android:centerY="0.35"/>-->
+        <!--</shape>-->
+    <!--</item>-->
+    <item>
+        <shape
+            android:shape="rectangle"
+            >
+            <solid
+                android:color="#40000000"
+                />
+        </shape>
+    </item>
+</layer-list>

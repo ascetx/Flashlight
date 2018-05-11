@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Flash Light</string>
+    <string name="compass_not_supported">Compass not supported in this device</string>
+</resources>
