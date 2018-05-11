@@ -83,7 +83,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private MediaPlayer mp;
 
     private static Timer t;
-    private Timer showInterstitialAd;
+    private Timer showInterstitialAd; 
     private boolean isOn = false;
     private boolean isOnPause = false;
     private boolean pauseIntAd = false;
