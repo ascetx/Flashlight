@@ -109,6 +109,9 @@ public class IabHelper {
     IInAppBillingService mService;
     ServiceConnection mServiceConn;
 
+    //To check if service is still bounded
+    boolean isBound = false;
+
     // The request code used to launch purchase flow
     int mRequestCode;
 
@@ -298,7 +301,7 @@ public class IabHelper {
         List<ResolveInfo> intentServices = mContext.getPackageManager().queryIntentServices(serviceIntent, 0);
         if (intentServices != null && !intentServices.isEmpty()) {
             // service available to handle that Intent
-            mContext.bindService(serviceIntent, mServiceConn, Context.BIND_AUTO_CREATE);
+            isBound = mContext.bindService(serviceIntent, mServiceConn, Context.BIND_AUTO_CREATE);
         }
         else {
             // no service available to handle that Intent
@@ -327,7 +330,8 @@ public class IabHelper {
         mSetupDone = false;
         if (mServiceConn != null) {
             logDebug("Unbinding from service.");
-            if (mContext != null) mContext.unbindService(mServiceConn);
+            if (mContext != null)
+                if (isBound) mContext.unbindService(mServiceConn);
         }
         mDisposed = true;
         mContext = null;
@@ -1100,6 +1104,14 @@ public class IabHelper {
                 }
             }
         })).start();
+    }
+
+    public boolean isAsyncInProgress(){
+        return mAsyncInProgress;
+    }
+
+    public boolean isSetupDone (){
+        return mSetupDone;
     }
 
     void logDebug(String msg) {

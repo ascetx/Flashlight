@@ -211,18 +211,30 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         };
 
+
         mHelper.startSetup(new IabHelper.OnIabSetupFinishedListener() {
             public void onIabSetupFinished(IabResult result) {
                 if (!result.isSuccess()) {
                     // Oh no, there was a problem.
                     logDebug("Problem setting up In-app Billing: " + result);
                 }
-                // Hooray, IAB is fully set up!
-                logDebug("Hooray, IAB is fully set up!: " + result);
-                try {
-                    mHelper.queryInventoryAsync(mGotInventoryListener);
-                } catch (IabHelper.IabAsyncInProgressException e) {
-                    e.printStackTrace();
+//                ** Edit for error (commented out: IAB helper is not set up. Can't perform operation: queryInventory)
+//                // Hooray, IAB is fully set up!
+//                logDebug("Hooray, IAB is fully set up!: " + result);
+//                try {
+//                    mHelper.queryInventoryAsync(mGotInventoryListener);
+//                } catch (IabHelper.IabAsyncInProgressException e) {
+//                    e.printStackTrace();
+//                }
+                if (result.isSuccess()) {
+                    //Horay, IAB is fully set up!
+                    Log.d(TAG, "Horay, IAB is fully set up!");
+                    //queryPurchasedItems;
+                    try {
+                        mHelper.queryInventoryAsync(mGotInventoryListener);
+                    } catch (IabHelper.IabAsyncInProgressException e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         });
