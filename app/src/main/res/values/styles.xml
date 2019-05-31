@@ -23,4 +23,9 @@
         <item name="android:layout_weight">1</item>
     </style>
 
+    <style name="MyDialogTheme" parent="Theme.AppCompat.Light.Dialog.Alert">
+        <item name="android:background">@drawable/premium_gold_dialog   </item>
+        <item name="android:textColor">@color/white</item>
+    </style>
+
 </resources>

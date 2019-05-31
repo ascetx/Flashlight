@@ -107,6 +107,7 @@
         android:layout_height="150dp"
         android:layout_weight="1"
         android:background="@null"
+        android:contentDescription="@string/toggle_flashlight"
         android:clickable="true"
         android:src="@drawable/pon"/>
 
@@ -128,6 +129,7 @@
                 android:foregroundGravity="center"
                 android:layout_gravity="center_vertical"
                 android:onClick="flashSOS"
+                android:contentDescription="@string/content_sos"
                 android:clickable="true"
                 android:src="@drawable/sf" />
         </RelativeLayout>
@@ -159,6 +161,7 @@
                 android:layout_height="50dp"
                 android:foregroundGravity="center"
                 android:layout_gravity="center_vertical"
+                android:contentDescription="@string/content_no_ads"
                 android:clickable="true"
                 android:onClick="removeAd"
                 android:src="@drawable/ad" />
@@ -170,6 +173,8 @@
         android:id="@+id/adView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:contentDescription="@string/content_banner_ad"
+        android:visibility="gone"
         ads:adSize="SMART_BANNER"
         ads:adUnitId="ca-app-pub-3752168151808074/4965343302">
     <!--ads:adUnitId="ca-app-pub-3940256099942544/6300978111">-->

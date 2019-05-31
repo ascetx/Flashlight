@@ -2,19 +2,12 @@ package info.ascetx.flashlight;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.PendingIntent;
-import android.content.ComponentName;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentSender;
 import android.content.ServiceConnection;
+import android.graphics.SurfaceTexture;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.os.AsyncTask;
-import android.os.IBinder;
-import android.os.RemoteException;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -24,6 +17,8 @@ import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.hardware.Camera;
 import android.hardware.Camera.Parameters;
+import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraManager;
 import android.media.MediaPlayer;
 import android.view.WindowManager;
 import android.view.animation.Animation;
@@ -31,15 +26,16 @@ import android.view.animation.RotateAnimation;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
-import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import com.android.billingclient.api.BillingClient;
 import com.android.vending.billing.IInAppBillingService;
 import com.google.android.gms.ads.AdListener;
 import com.google.android.gms.ads.AdRequest;
@@ -48,17 +44,17 @@ import com.google.android.gms.ads.MobileAds;
 import com.google.android.gms.ads.InterstitialAd;
 import com.google.firebase.analytics.FirebaseAnalytics;
 
-import org.json.JSONException;
-import org.json.JSONObject;
+import info.ascetx.flashlight.app.AcquireDialog;
+import info.ascetx.flashlight.app.MainViewController;
+import info.ascetx.flashlight.app.SessionManager;
+import info.ascetx.flashlight.billing.BillingManager;
+import info.ascetx.flashlight.billing.BillingProvider;
 
-import info.ascetx.flashlight.util.IabHelper;
-import info.ascetx.flashlight.util.IabResult;
-import info.ascetx.flashlight.util.Inventory;
-import info.ascetx.flashlight.util.Purchase;
+import static info.ascetx.flashlight.app.Config.bannerAdUnit;
+import static info.ascetx.flashlight.app.Config.interstitialAdUnit;
+import static info.ascetx.flashlight.billing.BillingManager.BILLING_MANAGER_NOT_INITIALIZED;
 
-import static info.ascetx.flashlight.util.IabHelper.BILLING_RESPONSE_RESULT_OK;
-
-public class MainActivity extends AppCompatActivity implements SensorEventListener{
+public class MainActivity extends AppCompatActivity implements SensorEventListener, BillingProvider {
 
     public static final String TAG = MainActivity.class.getSimpleName();
     private static final int MY_PERMISSIONS_REQUEST_CAMERA = 0;
@@ -66,6 +62,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     // define the display assembly compass picture
     private ImageView image, btnSwitch, btnSos, btnRemAd;
     private FirebaseAnalytics mFirebaseAnalytics;
+    private SessionManager session;
     // record the compass picture angle turned
     private float currentDegree = 0f;
 
@@ -74,7 +71,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private Button flashFreq;
     private Button [] freq;
     private TextView tvHeading,tvCompassError;
+
     private Camera camera;
+    private final Object lock = new Object();
+
     private boolean isFlashOn;
     private boolean isFlashSOSOn;
     private boolean hasFlash;
@@ -83,7 +83,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private MediaPlayer mp;
 
     private static Timer t;
-    private Timer showInterstitialAd; 
+//    private Timer showInterstitialAd;
     private boolean isOn = false;
     private boolean isOnPause = false;
     private boolean pauseIntAd = false;
@@ -99,167 +99,83 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     public static final int REQUEST_CODE = 1001;
     private IInAppBillingService mService;
     private ServiceConnection mServiceConn;
-    private IabHelper mHelper;
-    private IabHelper.OnIabPurchaseFinishedListener mPurchaseFinishedListener;
+
+    private MainViewController mViewController;
+    private BillingManager mBillingManager;
+    private AcquireDialog mAcquireDialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // session manager
+        session = new SessionManager(this);
+
         // Obtain the FirebaseAnalytics instance.
         mFirebaseAnalytics = FirebaseAnalytics.getInstance(this);
 
         final Activity mActivity = this;
 
+//************************* Start Billing ****************************************************************************
+
+        // Start the controller and load game data
+        mViewController = new MainViewController(this);
+
+        // Create and initialize BillingManager which talks to BillingLibrary
+        mBillingManager = new BillingManager(this, mViewController.getUpdateListener());
+
+//************************* End Billing ****************************************************************************
+
+        MobileAds.initialize(this, bannerAdUnit);
         mAdView = (AdView) findViewById(R.id.adView);
-        AdRequest adRequest = new AdRequest.Builder().build();
-        mAdView.loadAd(adRequest);
+        if(!session.isPremiumUser()) {
+            AdRequest adRequest = new AdRequest.Builder().build();
+            mAdView.loadAd(adRequest);
+            mAdView.setAdListener(new AdListener() {
+                @Override
+                public void onAdLoaded() {
+                    super.onAdLoaded();
+                    mAdView.setVisibility(View.VISIBLE);
+                }
+            });
+        }
 
-//        MobileAds.initialize(this,
-//                "ca-app-pub-3940256099942544~3347511713");
+        /*if (!session.isPremiumUser()) {
+            mInterstitialAd = new InterstitialAd(this);
+            mInterstitialAd.setAdUnitId(interstitialAdUnit);
+            mInterstitialAd.loadAd(new AdRequest.Builder().build());
 
-        MobileAds.initialize(this,
-                "ca-app-pub-3752168151808074~1222126147");
+            mInterstitialAd.setAdListener(new AdListener() {
+                @Override
+                public void onAdClosed() {
+                    // Load the next interstitial.
+                    mInterstitialAd.loadAd(new AdRequest.Builder().build());
+                }
+            });
 
-        mInterstitialAd = new InterstitialAd(this);
-//        mInterstitialAd.setAdUnitId("ca-app-pub-3940256099942544/1033173712");
-        mInterstitialAd.setAdUnitId("ca-app-pub-3752168151808074/8311769360");
-        mInterstitialAd.loadAd(new AdRequest.Builder().build());
-
-        mInterstitialAd.setAdListener(new AdListener() {
-            @Override
-            public void onAdClosed() {
-                // Load the next interstitial.
-                mInterstitialAd.loadAd(new AdRequest.Builder().build());
-            }
-        });
-
-        showInterstitialAd = new Timer();
-        showInterstitialAd.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                runOnUiThread(new Runnable() {
-                    @Override public void run() {
-                        if (mInterstitialAd.isLoaded() && !isOnPause){
-                            mInterstitialAd.show();
-                            pauseIntAd = true;
+            showInterstitialAd = new Timer();
+            showInterstitialAd.scheduleAtFixedRate(new TimerTask() {
+                @Override
+                public void run() {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (mInterstitialAd.isLoaded() && !isOnPause) {
+                                mInterstitialAd.show();
+                                pauseIntAd = true;
+                            }
                         }
-                    }
-                });
-            }
-        },0, 40000 );
+                    });
+                }
+            }, 0, 40000);
+        }*/
 
 //        Attempt to resolve: java.lang.RuntimeException: Camera is being used after Camera.release() was called
         getCamera();
 
-        final IabHelper.OnConsumeFinishedListener mConsumeFinishedListener =
-                new IabHelper.OnConsumeFinishedListener() {
-                    public void onConsumeFinished(Purchase purchase, IabResult result) {
-                        if (result.isSuccess()) {
-                            // provision the in-app purchase to the user
-                            // (for example, credit 50 gold coins to player's character)
-                            logError("Consumed success");
-                        }
-                        else {
-                            // handle error
-                            logError("Consume error");
-                        }
-                    }
-                };
+        enableDebugFL = true;
 
-        // ...
-        // TODO Split the public into two and encode both with separate hashing technique and query the encoded keys in app then decode each and join.
-        // Reason is that the key changes in play store when ever it likes to change, mostly when a new app is uploaded.
-        // If the key is taken from server we have the power to change it without making changes in app and publishing it.
-        String base64EncodedPublicKey = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuL+OTWzTlbpHUg1hcIdLocokjNd2fvmAwxCnb6R7TTx4dzZJVNu2jcV2FNoGgXL+yfR3S4YLC1o9+kEY5zi1yc1S58VjD3KrXpX11OHd5RI/5PwpQ/6HQQCqINNF9PwIIhwMPxpkI3bqd8aBZWWQ9YyCKJ9hCpaorDmFEe0QCpDt3RJ6C3c8V8WKmBRHEBWoEA7EocqQjbxUafOSSUV27vLgVInVgi7O701JUjr4apmfqiIuitVZrK/TNfz0Yh2o7K7Rfz9fAPbSClDPn4YF/lKdco5pb9/szDE5Jldbp4jjZMFFdganX8XFxm1ncrzSsFEpqukegHCf73xJ4xlUuwIDAQAB";
-
-        // compute your public key and store it in base64EncodedPublicKey
-        mHelper = new IabHelper(this, base64EncodedPublicKey);
-
-//        TODO to enable/disable IAB and FL loggers
-        mHelper.enableDebugLogging(false);
-        enableDebugFL = false;
-
-        final IabHelper.QueryInventoryFinishedListener mGotInventoryListener
-                = new IabHelper.QueryInventoryFinishedListener() {
-            public void onQueryInventoryFinished(IabResult result,
-                                                 Inventory inventory) {
-                logDebug("Querying purchased items: " + result+ " inventory: "+inventory);
-                if (result.isFailure()) {
-                    // handle error here
-                    logError("Query purchase failed");
-
-                }
-                else {
-                    boolean mIsPremium;
-                    logError("Query purchase pass");
-                    // does the user have the premium upgrade?
-                    mIsPremium = inventory.hasPurchase("no_ads");
-                    logError("mIsPremium: "+ mIsPremium);
-                    // update UI accordingly
-                    if(mIsPremium)
-                        hideAd();
-
-                    /*try {
-                        mHelper.consumeAsync(inventory.getPurchase("no_ads"),
-                                mConsumeFinishedListener);
-                    } catch (IabHelper.IabAsyncInProgressException e) {
-                        e.printStackTrace();
-                    }*/
-                }
-            }
-        };
-
-
-        mHelper.startSetup(new IabHelper.OnIabSetupFinishedListener() {
-            public void onIabSetupFinished(IabResult result) {
-                if (!result.isSuccess()) {
-                    // Oh no, there was a problem.
-                    logDebug("Problem setting up In-app Billing: " + result);
-                }
-//                ** Edit for error (commented out: IAB helper is not set up. Can't perform operation: queryInventory)
-//                // Hooray, IAB is fully set up!
-//                logDebug("Hooray, IAB is fully set up!: " + result);
-//                try {
-//                    mHelper.queryInventoryAsync(mGotInventoryListener);
-//                } catch (IabHelper.IabAsyncInProgressException e) {
-//                    e.printStackTrace();
-//                }
-                if (result.isSuccess()) {
-                    //Horay, IAB is fully set up!
-                    Log.d(TAG, "Horay, IAB is fully set up!");
-                    //queryPurchasedItems;
-                    try {
-                        mHelper.queryInventoryAsync(mGotInventoryListener);
-                    } catch (IabHelper.IabAsyncInProgressException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-        });
-
-        mPurchaseFinishedListener
-                = new IabHelper.OnIabPurchaseFinishedListener() {
-            public void onIabPurchaseFinished(IabResult result, Purchase purchase)
-            {
-                logError("purchase: "+purchase);
-                if (result.isFailure()) {
-                    logDebug("Error purchasing: " + result);
-                    if(purchase != null)
-                        logError("purchase.getSku().equals(\"no_ads\"): "+purchase.getSku().equals("no_ads"));
-                    return;
-                }
-                else if (purchase.getSku().equals("no_ads")) {
-                    // consume the gas and update the UI
-                    logDebug("Purchased no ads and hide Ad: " + result);
-                    hideAd();
-                }
-//                else if (purchase.getSku().equals(SKU_PREMIUM)) {
-//                    // give user access to premium content and update the UI
-//                }
-            }
-        };
 
 /*********************** Starting connection to iap *****************************
         mServiceConn = new ServiceConnection() {
@@ -339,7 +255,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         hasFlash = getApplicationContext().getPackageManager()
                 .hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH);
 
-        if (!hasFlash) {
+        /*if (!hasFlash) {
             // device doesn't support flash
             // Show alert message and close the application
             AlertDialog alert = new AlertDialog.Builder(MainActivity.this)
@@ -349,12 +265,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             alert.setButton("OK", new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface dialog, int which) {
                     // closing the application
-                    finish();
+//                    finish();
                 }
             });
             alert.show();
             return;
-        }
+        }*/
 
         logError("Is flash ON? " + String.valueOf(isFlashOn));
 
@@ -426,6 +342,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     }
 
+    public void removeAd(View view) {
+        if (mAcquireDialog == null) {
+            mAcquireDialog = new AcquireDialog();
+        }
+
+        if (mBillingManager != null
+                && mBillingManager.getBillingClientResponseCode()
+                > BILLING_MANAGER_NOT_INITIALIZED) {
+            Log.e(TAG,"onManagerReady: "+mBillingManager.getBillingClientResponseCode());
+            mAcquireDialog.onManagerReady(this);
+        }
+
+        mAcquireDialog.handleManagerAndUiReady(this);
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode,
                                            String permissions[], int[] grantResults) {
@@ -458,11 +389,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    private void hideAd(){
-        mAdView.setVisibility(View.GONE);
-        mInterstitialAd = null;
-        showInterstitialAd.cancel();
-    }
+//    private void hideAd(){
+//        mAdView.setVisibility(View.GONE);
+//        mInterstitialAd = null;
+//        showInterstitialAd.cancel();
+//    }
 
 /*********************** The naked async class for iap service ******************************************
     /**private class GetItemList extends AsyncTask<Integer, Integer, Long> {
@@ -555,83 +486,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }*/
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-
-        logDebug("onActivityResult(" + requestCode + "," + resultCode + "," + data);
-
-        // Pass on the activity result to the helper for handling
-        if (!mHelper.handleActivityResult(requestCode, resultCode, data)) {
-            // not handled, so handle it ourselves (here's where you'd
-            // perform any handling of activity results not related to in-app
-            // billing...
-            super.onActivityResult(requestCode, resultCode, data);
-        }
-        else {
-            logDebug("onActivityResult handled by IABUtil.");
-        }
-
-/******************* Naked code for handling data after purchase  ********************************************
-//        Google Play sends a response to your PendingIntent to the onActivityResult method of your application.
-//        The onActivityResult method has a result code of Activity.RESULT_OK (1) or Activity.RESULT_CANCELED (0)
-        logError("onActivityResult: Google Play sends a response to your PendingIntent to the onActivityResult method ");
-        if (requestCode == REQUEST_CODE) {
-            int responseCode = data.getIntExtra("RESPONSE_CODE", 0);
-            String purchaseData = data.getStringExtra("INAPP_PURCHASE_DATA");
-            logError("purchaseData: "+purchaseData);
-            String dataSignature = data.getStringExtra("INAPP_DATA_SIGNATURE");
-
-            if (resultCode == RESULT_OK) {
-                try {
-                    JSONObject jo = new JSONObject(purchaseData);
-                    String sku = jo.getString("productId");
-                    logError("You have bought the " + sku + ". Excellent choice,adventurer!");
-                }
-                catch (JSONException e) {
-                    logError("Failed to parse purchase data.");
-                    e.printStackTrace();
-                }
-            }
-        }*/
-    }
-
-    public void removeAd(View view){
-        pauseBilling = true;
-        try {
-            mHelper.launchPurchaseFlow(this, "no_ads", 1001,
-                    mPurchaseFinishedListener, "bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ");
-        } catch (IabHelper.IabAsyncInProgressException e) {
-            e.printStackTrace();
-        }
-/************ Naked code for starting purchase intent ********************************************
-//      Purchasing an item
-        Bundle buyIntentBundle = null;
-        try {
-//            To start a purchase request from your app, call the getBuyIntent method on the In-app Billing service
-            buyIntentBundle = mService.getBuyIntent(3, getPackageName(),
-                    "no_ads", "inapp", "devPayLoad");
-        } catch (RemoteException e) {
-            e.printStackTrace();
-        }
-        logError("buy Intent Response: "+ buyIntentBundle.getInt("RESPONSE_CODE"));
-//        The next step is to extract a PendingIntent from the response Bundle with key BUY_INTENT, as shown here:
-        PendingIntent pendingIntent = buyIntentBundle.getParcelable("BUY_INTENT");
-//        BILLING_RESPONSE_RESULT_ITEM_ALREADY_OWNED	7	Failure to purchase since item is already owned
-
-//        To complete the purchase transaction, call the startIntentSenderForResult method and use the
-//        PendingIntent that you created. This example uses an arbitrary value of 1001 for the request code:
-        try {
-            startIntentSenderForResult(pendingIntent.getIntentSender(),
-                    REQUEST_CODE, new Intent(), Integer.valueOf(0), Integer.valueOf(0),
-                    Integer.valueOf(0));
-        } catch (IntentSender.SendIntentException e) {
-            e.printStackTrace();
-        }
-
-//        Google Play sends a response to your PendingIntent to the onActivityResult method of your application.
-//        The onActivityResult method has a result code of Activity.RESULT_OK (1) or Activity.RESULT_CANCELED (0)
- */
-    }
 
     private void turnOffFlashSOS(){
         logError("turnOffFlashSOS");
@@ -764,10 +618,19 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // play sound
 //            playSound();
             logError("turning on flash");
-            params = camera.getParameters();
-            params.setFlashMode(Parameters.FLASH_MODE_TORCH);
-            camera.setParameters(params);
-            camera.startPreview();
+            // TODO getting run time exception as camera.getParameters() is being called when the camera is still in preview/not closed
+            synchronized (lock) {
+                params = camera.getParameters();
+                params.setFlashMode(Parameters.FLASH_MODE_TORCH);
+                camera.setParameters(params);
+                try {
+                    camera.setPreviewTexture(new SurfaceTexture(0));
+                } catch (IOException e) {
+                    logError("Flash On: setPreviewTexture error");
+                    e.printStackTrace();
+                }
+                camera.startPreview();
+            }
 //
 //                // changing button/switch image
 //                toggleButtonImage();
@@ -785,10 +648,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // play sound
 //            playSound();
             logError("turning off flash");
-            params = camera.getParameters();
-            params.setFlashMode(Parameters.FLASH_MODE_OFF);
-            camera.setParameters(params);
-            camera.stopPreview();
+            synchronized (lock) {
+                params = camera.getParameters();
+                params.setFlashMode(Parameters.FLASH_MODE_OFF);
+                camera.setParameters(params);
+                try {
+                    camera.setPreviewTexture(new SurfaceTexture(0));
+                } catch (IOException e) {
+                    logError("Flash Off: setPreviewTexture error");
+                    e.printStackTrace();
+                }
+                camera.stopPreview();
+            }
 //
 //                // changing button/switch image
 //                toggleButtonImage();
@@ -819,8 +690,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void getCamera() {
         if (camera == null) {
             try {
-                camera = Camera.open();
-                params = camera.getParameters();
+                synchronized (lock) {
+                    camera = Camera.open();
+                    params = camera.getParameters();
+                }
             } catch (RuntimeException e) {
                 logError(e.getMessage());
             }
@@ -849,6 +722,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     @Override
     protected void onDestroy() {
+        if (mBillingManager != null) {
+            mBillingManager.destroy();
+        }
         super.onDestroy();
 
         mSensorManager.unregisterListener(this);
@@ -856,12 +732,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (mService != null) {
             unbindService(mServiceConn);
         }
-        if (mHelper != null) try {
-            mHelper.dispose();
-        } catch (IabHelper.IabAsyncInProgressException e) {
-            e.printStackTrace();
-        }
-        mHelper = null;
     }
 
     @Override
@@ -903,6 +773,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         pauseBilling = false;
         pauseIntAd = false;
 
+        // Note: We query purchases in onResume() to handle purchases completed while the activity
+        // is inactive. For example, this can happen if the activity is destroyed during the
+        // purchase flow. This ensures that when the activity is resumed it reflects the user's
+        // current purchases.
+        if (mBillingManager != null
+                && mBillingManager.getBillingClientResponseCode() == BillingClient.BillingResponse.OK) {
+            mBillingManager.queryPurchases();
+        }
+
         // for the system's orientation sensor registered listeners
         if(mSensorManager.registerListener(this, mSensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION),
                 SensorManager.SENSOR_DELAY_GAME)){
@@ -932,8 +811,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         // on stop release the camera
         if (camera != null) {
-            camera.release();
-            camera = null;
+            synchronized (lock) {
+                camera.release();
+                camera = null;
+            }
         }
     }
 
@@ -995,4 +876,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if(enableDebugFL)
             Log.d(TAG, msg);
     }
+
+    public void onBillingManagerSetupFinished() {
+        if (mAcquireDialog != null) {
+            mAcquireDialog.onManagerReady(this);
+        }
+    }
+
+    @Override
+    public BillingManager getBillingManager() {
+        return mBillingManager;
+    }
+
+    @Override
+    public boolean isPremiumPurchased() {
+        return mViewController.isPremiumPurchased();
+    }
+
 }

@@ -6,4 +6,15 @@
     <color name="colorWhite">#fff</color>
     <color name="colorRed">#ff0000</color>
     <color name="colorFlashFreqButOn">#00b0ff</color>
+
+    <color name="white">#fff</color>
+
+    <color name="premium_alert_dialog_start">#b28b3d</color>
+    <color name="premium_alert_dialog_end">#e0d172</color>
+
+    <color name="premium_alert_dialog_button_positive">#fff</color>
+    <color name="premium_alert_dialog_button_negative">#d0cfbd</color>
+
+    <color name="snackbar_err_color">#ff6861</color>
+    <color name="snackbar_tru_color">#b89766</color>
 </resources>

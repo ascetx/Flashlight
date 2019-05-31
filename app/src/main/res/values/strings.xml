@@ -1,4 +1,20 @@
 <resources>
     <string name="app_name">Flash Light</string>
     <string name="compass_not_supported">Compass not supported in this device</string>
+
+    <string name="premium_title">Lifetime Premium User</string>
+    <string name="premium_message">Remove advertisements and include all future upgrades! \n</string>
+
+    <string name="error_no_skus">We didn\'t find any SKUs to display&#8230; Check your internet
+        connection and make sure your Google Developer Console was setup correctly.</string>
+    <string name="error_billing_unavailable">Billing unavailable. Make sure your Google Play app
+        is setup correctly</string>
+    <string name="error_billing_default">Billing unavailable. Please check your device.</string>
+
+
+    <string name="alert_already_purchased">Congrats! You are already a premium user!</string>
+    <string name="toggle_flashlight">Toggle Flashlight</string>
+    <string name="content_sos">Toggle SOS signal</string>
+    <string name="content_no_ads">Remove Ads</string>
+    <string name="content_banner_ad">Click Banner Advertisement</string>
 </resources>
